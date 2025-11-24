@@ -18,6 +18,10 @@ app = FastAPI(
     title="Vedic Astrology API",
     description="Returns full Vedic charts (including all divisional charts) as JSON.",
     version="1.0.0",
+    servers=[
+        {"url": "https://vedic-astrology-api-production.up.railway.app", "description": "Production Server"},
+        {"url": "http://localhost:8000", "description": "Local Development"}
+    ]
 )
 
 # Add CORS middleware for API access from different domains
