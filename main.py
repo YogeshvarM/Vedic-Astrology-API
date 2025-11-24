@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from jyotishganit import calculate_birth_chart, get_birth_chart_json_string
@@ -17,6 +18,15 @@ app = FastAPI(
     title="Vedic Astrology API",
     description="Returns full Vedic charts (including all divisional charts) as JSON.",
     version="1.0.0",
+)
+
+# Add CORS middleware for API access from different domains
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify your frontend domains
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -183,6 +193,20 @@ def panchanga_to_json(chart) -> Dict[str, Any]:
         "yoga": getattr(p, "yoga", None),
         "karana": getattr(p, "karana", None),
         "vaara": getattr(p, "vaara", None),
+    }
+
+
+@app.get("/")
+def health_check():
+    """Health check endpoint for Railway and monitoring"""
+    return {
+        "status": "healthy",
+        "service": "Vedic Astrology API",
+        "version": "1.0.0",
+        "endpoints": {
+            "docs": "/docs",
+            "birth_chart": "/birth_chart"
+        }
     }
 
 
