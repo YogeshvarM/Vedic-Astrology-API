@@ -105,8 +105,64 @@ class BirthData(BaseModel):
 class BirthChartResponse(BaseModel):
     birth_data: Dict[str, Any]
     panchanga: Dict[str, Any]
-    charts: Dict[str, Any]
-    raw_chart: Dict[str, Any]
+    d1_chart: Dict[str, Any]
+    charts: Optional[Dict[str, Any]] = None
+    raw_chart: Optional[Dict[str, Any]] = None
+
+
+# ... (keeping existing helper functions) ...
+
+@app.post("/birth_chart", response_model=BirthChartResponse)
+def birth_chart(data: BirthData, detailed: bool = False):
+    """
+    Get birth chart data. 
+    By default, returns only D1 chart and basic info (fast & small).
+    Set 'detailed=true' to get ALL divisional charts and raw data (may be large).
+    """
+    birth_dt = datetime_from_strings(data.date, data.time)
+    
+    # Geocode the place and get timezone
+    latitude, longitude, tz_offset = get_location_data(data.place, birth_dt)
+
+    chart = calculate_birth_chart(
+        birth_date=birth_dt,
+        latitude=latitude,
+        longitude=longitude,
+        timezone_offset=tz_offset,
+        name=data.name or "User",
+    )
+
+    panchanga_json = panchanga_to_json(chart)
+    
+    # Always calculate D1 for the summary
+    d1_json = divisional_chart_to_json(chart.d1_chart)
+
+    birth_data_json = {
+        "name": data.name or "User",
+        "datetime": birth_dt.isoformat(),
+        "date": data.date,
+        "time": data.time,
+        "place": data.place,
+        "tz_offset": tz_offset,
+        "latitude": latitude,
+        "longitude": longitude,
+        "ascendant_sign": getattr(chart.d1_chart.houses[0].sign, "name", str(chart.d1_chart.houses[0].sign)),
+        "moon_sign": getattr(chart.d1_chart.planets[1].sign, "name", str(chart.d1_chart.planets[1].sign)),
+    }
+
+    response = BirthChartResponse(
+        birth_data=birth_data_json,
+        panchanga=panchanga_json,
+        d1_chart=d1_json,
+        charts=None,
+        raw_chart=None
+    )
+
+    if detailed:
+        response.raw_chart = json.loads(get_birth_chart_json_string(chart))
+        response.charts = all_divisional_charts_to_json(chart)
+
+    return response
 
 class DivisionalChartResponse(BaseModel):
     division: str
@@ -276,44 +332,7 @@ def health_check():
     }
 
 
-@app.post("/birth_chart", response_model=BirthChartResponse)
-def birth_chart(data: BirthData):
-    birth_dt = datetime_from_strings(data.date, data.time)
-    
-    # Geocode the place and get timezone
-    latitude, longitude, tz_offset = get_location_data(data.place, birth_dt)
 
-    chart = calculate_birth_chart(
-        birth_date=birth_dt,
-        latitude=latitude,
-        longitude=longitude,
-        timezone_offset=tz_offset,
-        name=data.name or "User",
-    )
-
-    raw_chart = json.loads(get_birth_chart_json_string(chart))
-    charts_json = all_divisional_charts_to_json(chart)
-    panchanga_json = panchanga_to_json(chart)
-
-    birth_data_json = {
-        "name": data.name or "User",
-        "datetime": birth_dt.isoformat(),
-        "date": data.date,
-        "time": data.time,
-        "place": data.place,
-        "tz_offset": tz_offset,
-        "latitude": latitude,
-        "longitude": longitude,
-        "ascendant_sign": getattr(chart.d1_chart.houses[0].sign, "name", str(chart.d1_chart.houses[0].sign)),
-        "moon_sign": getattr(chart.d1_chart.planets[1].sign, "name", str(chart.d1_chart.planets[1].sign)),
-    }
-
-    return BirthChartResponse(
-        birth_data=birth_data_json,
-        panchanga=panchanga_json,
-        charts=charts_json,
-        raw_chart=raw_chart,
-    )
 
 
 @app.post("/charts/{division}", response_model=DivisionalChartResponse)
