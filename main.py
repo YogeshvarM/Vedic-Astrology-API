@@ -108,6 +108,23 @@ class BirthChartResponse(BaseModel):
     charts: Dict[str, Any]
     raw_chart: Dict[str, Any]
 
+class DivisionalChartResponse(BaseModel):
+    division: str
+    chart_data: Dict[str, Any]
+
+class PlanetInfo(BaseModel):
+    name: str
+    sign: str
+    house: int
+    is_retrograde: bool
+    aspects: List[Dict[str, Any]]
+
+class PlanetsResponse(BaseModel):
+    planets: List[PlanetInfo]
+
+class DashaResponse(BaseModel):
+    dashas: Dict[str, Any]
+
 
 def get_timezone_offset(latitude: float, longitude: float, dt: datetime) -> float:
     """Get timezone offset for a location at a specific datetime"""
@@ -200,6 +217,51 @@ def panchanga_to_json(chart) -> Dict[str, Any]:
     }
 
 
+def planets_to_json(chart) -> List[Dict[str, Any]]:
+    planets_data = []
+    for p in chart.d1_chart.planets:
+        aspects_data = []
+        if hasattr(p, 'aspects'):
+            for aspect in p.aspects:
+                aspects_data.append({
+                    "type": getattr(aspect, 'type', str(aspect)),
+                    "target": str(getattr(aspect, 'target', ''))
+                })
+        
+        planets_data.append({
+            "name": getattr(getattr(p, "celestial_body", None), "name", str(getattr(p, "celestial_body", ""))),
+            "sign": getattr(getattr(p, "sign", None), "name", str(getattr(p, "sign", ""))),
+            "house": getattr(getattr(p, "house", None), "number", 0),
+            "is_retrograde": getattr(p, "motion_type", "").lower() == "retrograde" if hasattr(p, "motion_type") else False,
+            "aspects": aspects_data
+        })
+    return planets_data
+
+
+def dashas_to_json(chart) -> Dict[str, Any]:
+    if hasattr(chart, 'dashas'):
+        # Assuming dashas is a complex object, we might need to serialize it carefully
+        # For now, let's try to convert it to dict if possible, or string representation
+        try:
+            return getattr(chart.dashas, 'to_dict', lambda: {"raw": str(chart.dashas)})()
+        except Exception:
+            return {"info": str(chart.dashas)}
+    return {}
+
+
+def get_chart_object(data: BirthData):
+    birth_dt = datetime_from_strings(data.date, data.time)
+    latitude, longitude, tz_offset = get_location_data(data.place, birth_dt)
+    
+    return calculate_birth_chart(
+        birth_date=birth_dt,
+        latitude=latitude,
+        longitude=longitude,
+        timezone_offset=tz_offset,
+        name=data.name or "User",
+    )
+
+
 @app.get("/")
 def health_check():
     """Health check endpoint for Railway and monitoring"""
@@ -252,3 +314,51 @@ def birth_chart(data: BirthData):
         charts=charts_json,
         raw_chart=raw_chart,
     )
+
+
+@app.post("/charts/{division}", response_model=DivisionalChartResponse)
+def get_divisional_chart(division: str, data: BirthData):
+    """
+    Get a specific divisional chart (e.g., D1, D9, D10).
+    """
+    chart = get_chart_object(data)
+    
+    # Normalize division name (e.g., "d1" -> "D1")
+    div_key = division.upper()
+    if not div_key.startswith("D"):
+        div_key = "D" + div_key
+        
+    if div_key not in chart.divisional_charts:
+        # Try to find it case-insensitive
+        found = False
+        for key in chart.divisional_charts.keys():
+            if key.upper() == div_key:
+                div_key = key
+                found = True
+                break
+        if not found:
+            raise HTTPException(status_code=404, detail=f"Divisional chart '{division}' not found. Available: {list(chart.divisional_charts.keys())}")
+
+    dchart = chart.divisional_charts[div_key]
+    return DivisionalChartResponse(
+        division=div_key,
+        chart_data=divisional_chart_to_json(dchart)
+    )
+
+
+@app.post("/planets", response_model=PlanetsResponse)
+def get_planetary_details(data: BirthData):
+    """
+    Get detailed planetary information including positions, retrograde status, and aspects.
+    """
+    chart = get_chart_object(data)
+    return PlanetsResponse(planets=planets_to_json(chart))
+
+
+@app.post("/dashas", response_model=DashaResponse)
+def get_dashas(data: BirthData):
+    """
+    Get Vimshottari Dasha details.
+    """
+    chart = get_chart_object(data)
+    return DashaResponse(dashas=dashas_to_json(chart))
