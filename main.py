@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -113,7 +113,13 @@ class BirthChartResponse(BaseModel):
 # ... (keeping existing helper functions) ...
 
 @app.post("/birth_chart", response_model=BirthChartResponse)
-def birth_chart(data: BirthData, detailed: bool = False):
+def birth_chart(
+    data: BirthData, 
+    detailed: bool = Query(
+        default=False, 
+        description="Set to true to get ALL divisional charts and raw data. Default is false (only D1 chart)."
+    )
+):
     """
     Get birth chart data. 
     By default, returns only D1 chart and basic info (fast & small).
